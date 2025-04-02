@@ -1,182 +1,239 @@
 """
-Script pour générer des données réalistes de campagnes commerciales
-Features:
-- Génération de logs d'appels avec patterns réalistes
-- Simulation de variations temporelles (saisonalité hebdo)
-- Export en CSV et vérification de la qualité
+Générateur de données complexes pour campagnes commerciales
+Caractéristiques :
+- Horaires précis avec heures, minutes, secondes
+- Nombre d'appels/jour aléatoire (loi de Poisson)
+- Saisonnalités multiples (hebdo, mensuelle, vacances)
+- Performances des agents variables
+- Profils clients réalistes
+- Événements spéciaux (campagnes marketing)
 """
 
 import pandas as pd
 import numpy as np
 from faker import Faker
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 import random
-from typing import Dict, List
 import logging
+from typing import Dict, Union, Any
 import argparse
 from pathlib import Path
+from scipy.stats import poisson
+from tqdm import tqdm
 
 # Configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DataGenerator:
-    def __init__(self, seed: int = 42):
-        """Initialisation avec reproductibilité"""
+    def __init__(self, seed=42):
         self.fake = Faker()
         np.random.seed(seed)
         random.seed(seed)
         
-        # Configuration métier
-        self.scripts = {
-            'A': {'base_conversion': 0.25, 'time_impact': {9: -0.1, 14: 0.2}},
-            'B': {'base_conversion': 0.35, 'time_impact': {10: 0.1, 15: 0.3}},
-            'C': {'base_conversion': 0.15, 'time_impact': {16: 0.4}}
+        # Configuration des motifs cachés
+        self.patterns = {
+            'golden_hours': [(14, 16, 0.35), (10, 11, 0.25)],
+            'agent_tiers': {
+                'novice': (0.15, 0.3),
+                'intermediate': (0.25, 0.4),
+                'expert': (0.35, 0.5)
+            },
+            'client_profiles': {
+                'SME': (0.3, 0.05),
+                'startup': (0.25, 0.1),
+                'enterprise': (0.35, 0.03)
+            }
         }
         
+        # Configuration initiale
+        self.products = ['SaaS', 'Hardware', 'Consulting', 'Support']
         self.regions = ['North', 'South', 'East', 'West']
-        self.products = ['SaaS', 'Hardware', 'Consulting']
-        
-        
-        self.holidays = {
-            '2024': ['2024-01-01', '2024-04-01', '2024-05-08', '2024-07-14'],
-            '2023': ['2023-01-01', '2023-04-10', '2023-05-01', '2023-07-14']
+        self.campaigns = {
+            '2024': [
+                ('2024-03-01', '2024-04-01', 0.15),
+                ('2024-06-15', '2024-07-15', 0.2)
+            ]
         }
+
+    def _generate_call_time(self) -> time:
+        """Génère un horaire réaliste entre 8h et 18h avec variations"""
+        # 60% de chance dans les plages de pic
+        if random.random() < 0.6:
+            if random.choice([True, False]):
+                hour = random.randint(10, 11)  # Matin
+            else:
+                hour = random.randint(14, 15)  # Après-midi
+        else:
+            hour = random.randint(8, 17)
         
-    def _generate_call_time(self, day: datetime) -> Dict:
-        """Génère un timestamp réaliste avec variations jour/semaine"""
-        hour = np.random.choice(
-            [9, 10, 14, 15, 16], 
-            p=[0.15, 0.25, 0.3, 0.2, 0.1]
+        minute = random.randint(0, 59)
+        second = random.randint(0, 59)
+        
+        # 5% d'appels hors horaires
+        if random.random() < 0.05:
+            hour = random.choice([7, 18, 19])
+            minute = random.randint(0, 59)
+        
+        return time(
+            hour=hour,
+            minute=minute,
+            second=second
+        )
+
+    def _generate_daily_calls(self, current_date: datetime) -> int:
+        """Génère le nombre d'appels du jour avec variations réalistes"""
+        base_calls = poisson.rvs(500)
+        day_factor = 1.3 if current_date.weekday() in [0, 4] else 1
+        return int(base_calls * day_factor)
+
+    def _create_agent_pool(self, num_agents=50) -> Dict[str, Dict[str, Any]]:
+        """Crée un pool d'agents avec des performances variables"""
+        agents = {}
+        tiers = list(self.patterns['agent_tiers'].keys())
+        for _ in range(num_agents):
+            tier = np.random.choice(tiers, p=[0.4, 0.4, 0.2])
+            min_p, max_p = self.patterns['agent_tiers'][tier]
+            agents[self.fake.unique.uuid4()] = {
+                'tier': tier,
+                'perf': np.random.uniform(min_p, max_p),
+                'tenure': np.random.poisson(180)
+            }
+        return agents
+
+    def _get_campaign_boost(self, date: datetime) -> float:
+        """Calcule le boost des campagnes marketing"""
+        boost = 0
+        for campaign in self.campaigns.get(str(date.year), []):
+            start = datetime.strptime(campaign[0], '%Y-%m-%d')
+            end = datetime.strptime(campaign[1], '%Y-%m-%d')
+            if start <= date <= end:
+                boost += campaign[2]
+        return boost
+
+    def _determine_conversion(self, call_time: time, agent: Dict[str, Any], 
+                             client_type: str, product: str, date: datetime) -> float:
+        """Détermine la conversion avec des relations complexes"""
+        # Extraction de l'heure et des minutes
+        hour = call_time.hour
+        minute = call_time.minute
+        
+        # Base rate
+        base_rate = self.patterns['client_profiles'][client_type][0]
+        
+        # Facteur heure
+        time_boost = next((b for s, e, b in self.patterns['golden_hours'] 
+                          if s <= hour <= e), 0)
+        
+        # Pénalité pour les appels tardifs
+        late_penalty = -0.15 if (hour == 17 and minute > 45) or hour > 17 else 0
+        
+        # Facteur agent
+        agent_boost = agent['perf'] * (1 + agent['tenure']/365)
+        
+        # Facteur produit
+        product_factor = 0.15 if product == 'Support' else 0.3
+        
+        # Facteur saisonnier
+        day_of_year = date.timetuple().tm_yday
+        seasonality = 0.1 * np.sin(2 * np.pi * day_of_year/365)
+        
+        # Combinaison non linéaire
+        final_rate = (
+            (base_rate * (1 + time_boost + agent_boost) + 
+            product_factor + 
+            seasonality + 
+            self._get_campaign_boost(date) +
+            late_penalty)
         )
         
-        # Effet weekend
-        if day.weekday() >= 5:
-            hour = max(10, hour - 1)  # Début plus tard le weekend
-            
-        return {
-            'call_time': hour,
-            'call_date': day.strftime('%Y-%m-%d'),
-            'day_of_week': day.strftime('%A')
-        }
-    
-    def _get_holiday_effect(self, date_str: str) -> float:
-        """Calcule l'impact des jours fériés sur la conversion"""
-        year = date_str[:4]
-        if date_str in self.holidays.get(year, []):
-            return -0.4  # -40% de conversion les jours fériés
-        return 0.0
-    
-    def _determine_conversion(self, script: str, hour: int, region: str, date_str: str) -> int:
-        """Calcule la probabilité de conversion avec effets combinés"""
-        base_rate = self.scripts[script]['base_conversion']
-        
-        # Effet horaire
-        hour_impact = self.scripts[script]['time_impact'].get(hour, 0)
-        
-        # Effet région (ex: East performe mieux)
-        region_impact = 0.1 if region == 'East' else -0.05 if region == 'North' else 0
-        
         # Bruit aléatoire
-        noise = np.random.normal(0, 0.05)
+        volatility = self.patterns['client_profiles'][client_type][1]
+        final_rate += np.random.normal(0, volatility)
         
-        # Ajout effet jours fériers
-        holiday_impact = self._get_holiday_effect(date_str)
-        
-        final_prob = base_rate + hour_impact + region_impact + holiday_impact + noise
-        return int(np.random.random() < final_prob)
-        
-        final_prob = base_rate + hour_impact + region_impact + noise
-        return int(np.random.random() < final_prob)
-    
-    def generate_campaign_data(self, start_date: str, days: int, calls_per_day: int) -> pd.DataFrame:
-        """Génère un dataset complet"""
-        records = []
+        return np.clip(final_rate, 0, 1)
+
+    def generate_dataset(self, start_date: str, days: int) -> pd.DataFrame:
+        """Génère le dataset complet avec horaires précis"""
+        agents = self._create_agent_pool()
         current_date = datetime.strptime(start_date, '%Y-%m-%d')
+        records = []
         
-        for _ in range(days):
-            for _ in range(calls_per_day):
-                script = random.choice(list(self.scripts.keys()))
-                region = random.choice(self.regions)
-                product = random.choice(self.products)
+        for _ in tqdm(range(days), desc="Génération des données"):
+            daily_calls = self._generate_daily_calls(current_date)
+            client_types = np.random.choice(
+                list(self.patterns['client_profiles'].keys()), 
+                daily_calls,
+                p=[0.5, 0.3, 0.2]
+            )
+            
+            for _ in range(daily_calls):
+                agent_id = random.choice(list(agents.keys()))
+                product = np.random.choice(self.products, p=[0.4, 0.3, 0.2, 0.1])
+                call_time = self._generate_call_time()
                 
-                time_data = self._generate_call_time(current_date)
-                
-                record = {
-                    'call_id': self.fake.uuid4(),
-                    'region': region,
-                    'product': product,
-                    'script_version': script,
-                    'duration': int(np.random.normal(300, 60)),
-                    'agent_id': f"AG-{self.fake.random_int(1000, 9999)}",
-                    **time_data,
-                }
-                
-                record['converted'] = self._determine_conversion(
-                    script, record['call_time'], region, record['call_date']
+                conversion_prob = self._determine_conversion(
+                    call_time=call_time,
+                    agent=agents[agent_id],
+                    client_type=np.random.choice(client_types),
+                    product=product,
+                    date=current_date
                 )
                 
-                records.append(record)
+                records.append({
+                    'call_id': self.fake.uuid4(),
+                    'call_datetime': datetime.combine(current_date, call_time).isoformat(),
+                    'duration': int(np.random.gamma(3, 100)),
+                    'product': product,
+                    'region': np.random.choice(self.regions),
+                    'agent_id': agent_id,
+                    'agent_tier': agents[agent_id]['tier'],
+                    'client_type': np.random.choice(client_types),
+                    'previous_contacts': np.random.poisson(1.2),
+                    'converted': int(np.random.random() < conversion_prob),
+                    'campaign_boost': self._get_campaign_boost(current_date)
+                })
             
             current_date += timedelta(days=1)
         
         df = pd.DataFrame(records)
-        
-        # Validation
-        self._validate_data(df)
-        return df
-    
-    def _validate_data(self, df: pd.DataFrame):
-        """Vérifie l'intégrité des données générées"""
-        assert not df.duplicated('call_id').any(), "IDs dupliqués détectés"
-        assert df['duration'].min() > 0, "Durées négatives invalides"
-        assert set(df['script_version']) == set(self.scripts.keys()), "Scripts non reconnus"
-        
-        logger.info(f"Data validation passed. Generated {len(df)} records.")
+        return self._add_realistic_noise(df)
 
-    # Ajouter dans la classe :
-    def add_holiday_effect(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Simule l'impact des jours fériés"""
-        holidays = ['2024-01-01', '2024-04-01', ...]
-        df['is_holiday'] = df['call_date'].isin(holidays)
-        df.loc[df['is_holiday'], 'converted'] *= 0.7  # Réduction de 30%
+    def _add_realistic_noise(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Ajoute des artefacts réalistes"""
+        # Valeurs manquantes
+        df.loc[df.sample(frac=0.02).index, 'duration'] = None
+        
+        # Durées aberrantes
+        outlier_idx = df.sample(frac=0.01).index
+        df.loc[outlier_idx, 'duration'] *= 10
+        
+        # Incohérences temporelles
+        time_anomalies = df.sample(frac=0.005).index
+        df.loc[time_anomalies, 'call_time'] = "03:00:00"
+        df.loc[time_anomalies, 'call_hour'] = 3
+        
         return df
-    
+
 def parse_arguments():
-        """Interface en ligne de commande professionnelle"""
-        parser = argparse.ArgumentParser(description="Générateur de données pour campagnes commerciales")
-        parser.add_argument('--start-date', type=str, required=True,
-                        help='Date de début au format YYYY-MM-DD')
-        parser.add_argument('--days', type=int, default=30,
-                        help='Nombre de jours à générer')
-        parser.add_argument('--calls-per-day', type=int, default=200,
-                        help='Nombre d\'appels par jour')
-        parser.add_argument('--output-dir', type=str, default='data/generated',
-                        help='Répertoire de sortie')
-        parser.add_argument('--seed', type=int, default=42,
-                        help='Seed aléatoire pour la reproductibilité')
-        return parser.parse_args()
-    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--start-date', required=True)
+    parser.add_argument('--days', type=int, default=365)
+    parser.add_argument('--output', default='data/campaign_data.csv')
+    return parser.parse_args()
+
 if __name__ == "__main__":
     args = parse_arguments()
+    generator = DataGenerator()
     
-    # Configuration du générateur
-    generator = DataGenerator(seed=args.seed)
+    logger.info("Génération du dataset...")
+    df = generator.generate_dataset(args.start_date, args.days)
     
-    # Génération des données
-    df = generator.generate_campaign_data(
-        start_date=args.start_date,
-        days=args.days,
-        calls_per_day=args.calls_per_day
-    )
-    
-    # Création du répertoire de sortie
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Export en CSV avec timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_dir / f"campaign_data_{timestamp}.csv"
+    logger.info("\n Statistiques globales :")
+    logger.info(f"Taux de conversion : {df['converted'].mean():.2%}")
+    logger.info(f"Exemple d'horaire : {df['call_datetime'].iloc[0]}")
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
-    
-    logger.info(f"Données générées avec succès dans {output_path}")
+    logger.info(f"Dataset sauvegardé dans {output_path}")
