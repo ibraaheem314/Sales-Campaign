@@ -55,6 +55,15 @@ class DataGenerator:
                 ('2024-06-15', '2024-07-15', 0.2)
             ]
         }
+        
+        self.usa_cities = {
+        'West': ['Los Angeles', 'San Francisco', 'Seattle', 'San Diego', 'Las Vegas'],
+        'South': ['Houston', 'Dallas', 'Miami', 'Atlanta', 'New Orleans'],
+        'East': ['New York', 'Boston', 'Philadelphia', 'Washington', 'Baltimore'],
+        'North': ['Chicago', 'Detroit', 'Minneapolis', 'Milwaukee', 'Indianapolis']}
+
+        self.regions = list(self.usa_cities.keys())  # Maintenant les régions sont les clés du dict
+
 
     def _generate_call_time(self) -> time:
         """Génère un horaire réaliste entre 8h et 18h avec variations"""
@@ -206,10 +215,14 @@ class DataGenerator:
     
         # 1. Valeurs manquantes aléatoires
         missing_patterns = {
-        'duration': 0.03,  # 3% de durées manquantes
-        'product': 0.01,   # 1% de produits manquants
-        'region': 0.02,    # 2% de régions manquantes
-        'agent_id': 0.005  # 0.5% d'agents non enregistrés
+        'duration': 0.1921,  # 13% de durées manquantes
+        'product': 0.2358,   # 17% de produits manquants
+        'region': 0.0721,    # 8% de régions manquantes
+        'agent_id': 0.0585,  # 5% d'agents non enregistrés
+        'client_type': 0.1686,
+        'previous_contacts': 0.1124,
+        'previous_contacts': 0.2283,
+        'agent_tier': 0.1259
         }
     
         for col, frac in missing_patterns.items():
@@ -225,7 +238,7 @@ class DataGenerator:
             )
     
         # 3. Incohérences temporelles complexes
-        time_issues = df.sample(frac=0.01).index
+        time_issues = df.sample(frac=0.05).index
         df.loc[time_issues, 'call_time'] = np.random.choice([
             "00:00:00", 
             "23:59:59",
@@ -233,14 +246,14 @@ class DataGenerator:
             "99:99:99"], size=len(time_issues))
     
         # 4. Incohérences de produits/régions
-        product_region_mismatch = df.sample(frac=0.005).index
+        product_region_mismatch = df.sample(frac=0.05).index
         df.loc[product_region_mismatch, 'product'] = np.where(
             df.loc[product_region_mismatch, 'region'] == 'North',
             'Hardware',  # Forcer un produit incohérent
             'SaaS')
     
         # 5. Doublons partiels
-        duplicate_idx = df.sample(frac=0.003).index
+        duplicate_idx = df.sample(frac=0.008).index
         df = pd.concat([
             df,
             df.loc[duplicate_idx].assign(call_id=lambda x: x['call_id'] + '_dup')])
@@ -254,7 +267,7 @@ class DataGenerator:
             df.loc[conversion_issues, 'converted'] )
     
         # 7. Problèmes de formats
-        format_issues = df.sample(frac=0.005).index
+        format_issues = df.sample(frac=0.09).index
         df.loc[format_issues, 'agent_id'] = df.loc[format_issues, 'agent_id'].str.replace('AG-', 'Agent')
     
         # 8. Anomalies saisonnières (plus d'erreurs en décembre)
