@@ -183,6 +183,8 @@ class DataGenerator:
                 records.append({
                     'call_id': self.fake.uuid4(),
                     'call_datetime': datetime.combine(current_date, call_time).isoformat(),
+                    'call_time': call_time.strftime("%H:%M:%S"),
+                    'call_hour': call_time.hour,
                     'duration': int(np.random.gamma(3, 100)),
                     'product': product,
                     'region': np.random.choice(self.regions),
@@ -200,19 +202,66 @@ class DataGenerator:
         return self._add_realistic_noise(df)
 
     def _add_realistic_noise(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Ajoute des artefacts réalistes"""
-        # Valeurs manquantes
-        df.loc[df.sample(frac=0.02).index, 'duration'] = None
-        
-        # Durées aberrantes
-        outlier_idx = df.sample(frac=0.01).index
-        df.loc[outlier_idx, 'duration'] *= 10
-        
-        # Incohérences temporelles
-        time_anomalies = df.sample(frac=0.005).index
-        df.loc[time_anomalies, 'call_time'] = "03:00:00"
-        df.loc[time_anomalies, 'call_hour'] = 3
-        
+        """Ajoute des artefacts réalistes complexes"""
+    
+        # 1. Valeurs manquantes aléatoires
+        missing_patterns = {
+        'duration': 0.03,  # 3% de durées manquantes
+        'product': 0.01,   # 1% de produits manquants
+        'region': 0.02,    # 2% de régions manquantes
+        'agent_id': 0.005  # 0.5% d'agents non enregistrés
+        }
+    
+        for col, frac in missing_patterns.items():
+            missing_idx = df.sample(frac=frac).index
+            df.loc[missing_idx, col] = None
+    
+        # 2. Durées aberrantes avec différents patterns
+        duration_anomalies = df.sample(frac=0.02).index
+        df.loc[duration_anomalies, 'duration'] = np.where(
+            np.random.rand(len(duration_anomalies)) > 0.5,
+            df.loc[duration_anomalies, 'duration'] * 10,  # Valeurs extrêmes
+            0  # Durées nulles
+            )
+    
+        # 3. Incohérences temporelles complexes
+        time_issues = df.sample(frac=0.01).index
+        df.loc[time_issues, 'call_time'] = np.random.choice([
+            "00:00:00", 
+            "23:59:59",
+            "12:00:00",
+            "99:99:99"], size=len(time_issues))
+    
+        # 4. Incohérences de produits/régions
+        product_region_mismatch = df.sample(frac=0.005).index
+        df.loc[product_region_mismatch, 'product'] = np.where(
+            df.loc[product_region_mismatch, 'region'] == 'North',
+            'Hardware',  # Forcer un produit incohérent
+            'SaaS')
+    
+        # 5. Doublons partiels
+        duplicate_idx = df.sample(frac=0.003).index
+        df = pd.concat([
+            df,
+            df.loc[duplicate_idx].assign(call_id=lambda x: x['call_id'] + '_dup')])
+    
+        # 6. Valeurs de conversion incohérentes
+        conversion_issues = df.sample(frac=0.01).index
+        df.loc[conversion_issues, 'converted'] = np.where(
+            (df.loc[conversion_issues, 'duration'] < 30) | 
+            (df.loc[conversion_issues, 'duration'] > 1800),
+            1,  # Conversion improbable pour durée extrême
+            df.loc[conversion_issues, 'converted'] )
+    
+        # 7. Problèmes de formats
+        format_issues = df.sample(frac=0.005).index
+        df.loc[format_issues, 'agent_id'] = df.loc[format_issues, 'agent_id'].str.replace('AG-', 'Agent')
+    
+        # 8. Anomalies saisonnières (plus d'erreurs en décembre)
+        if not df.empty:
+            december_idx = df[df['call_datetime'].str.contains('-12-')].sample(frac=0.05).index
+            df.loc[december_idx, 'duration'] = df.loc[december_idx, 'duration'] * 5
+    
         return df
 
 def parse_arguments():
@@ -231,9 +280,10 @@ if __name__ == "__main__":
     
     logger.info("\n Statistiques globales :")
     logger.info(f"Taux de conversion : {df['converted'].mean():.2%}")
-    logger.info(f"Exemple d'horaire : {df['call_datetime'].iloc[0]}")
-
+    logger.info(f"Exemple d'horaire : {df['call_time'].iloc[0]}")
+    logger.info(f"Répartition horaire :\n{df['call_hour'].value_counts().sort_index()}")
+    
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
-    logger.info(f"Dataset sauvegardé dans {output_path}")
+    logger.info(f"✅ Dataset sauvegardé dans {output_path}")
