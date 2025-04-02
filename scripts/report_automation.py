@@ -1,24 +1,67 @@
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Image
-from reportlab.lib.styles import getSampleStyleSheet
 import pandas as pd
+from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, Image
+)
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-def create_report():
-    df = pd.read_csv('data/sample_data/call_logs.csv')
+def generate_daily_report():
+    # Chargement des données
+    df = pd.read_csv('../data/generated/campaign_data.csv')
     
-    # Calculs
-    conversion_rate = df['converted'].mean() * 100
-    peak_hour = df.groupby('call_time')['converted'].mean().idxmax()
+    # Analyse des KPIs
+    kpis = {
+        'Conversion Rate': df['converted'].mean(),
+        'Avg Duration': df['duration'].mean(),
+        'Peak Hour': df.groupby('call_time')['converted'].mean().idxmax()
+    }
+    
+    # Visualisations
+    plt.figure(figsize=(10, 6))
+    sns.barplot(
+        x='call_time', 
+        y='converted', 
+        hue='script_version', 
+        data=df,
+        ci=None
+    )
+    plt.title('Taux de Conversion par Heure et Script')
+    plt.savefig('conversion_by_hour.png', bbox_inches='tight')
     
     # Génération PDF
-    doc = SimpleDocTemplate("daily_report.pdf", pagesize=letter)
+    doc = SimpleDocTemplate(
+        "daily_report.pdf",
+        pagesize=letter,
+        title="Rapport Quotidien Campagne"
+    )
+    
     styles = getSampleStyleSheet()
+    elements = []
     
-    content = []
-    content.append(Paragraph(f"Conversion Rate: {conversion_rate:.1f}%", styles['Title']))
-    content.append(Paragraph(f"Optimal Call Hour: {peak_hour}h", styles['BodyText']))
+    # Titre
+    elements.append(Paragraph(
+        f"Rapport Journalier - {datetime.today().strftime('%d/%m/%Y')}",
+        styles['Title']
+    ))
     
-    doc.build(content)
+    # KPIs
+    elements.append(Paragraph("Indicateurs Clés :", styles['Heading2']))
+    kpi_table = Table(
+        [[k, f"{v:.2f}" if isinstance(v, float) else v] for k, v in kpis.items()],
+        colWidths=[200, 100]
+    )
+    elements.append(kpi_table)
+    
+    # Visualisation
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph("Performance par Heure :", styles['Heading2']))
+    elements.append(Image('conversion_by_hour.png', width=400, height=300))
+    
+    doc.build(elements)
 
 if __name__ == "__main__":
-    create_report()
+    generate_daily_report()

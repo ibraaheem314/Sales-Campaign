@@ -1,19 +1,27 @@
+
+---
+
+### **Bonus : Fichier docker-compose.yml**
+```yaml
 version: '3.8'
 
 services:
-  api:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
     ports:
-      - "8000:8000"
+      - "8501:8501"
     volumes:
-      - ./models:/app/models
+      - ./:/app
     environment:
-      - ENV=production
-    
-  monitoring:
-    image: python:3.9-slim
-    command: python monitoring/drift_detection.py
-    volumes:
-      - .:/app
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
-      - api
+      - mlflow
+
+  mlflow:
+    image: mlflow/mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
