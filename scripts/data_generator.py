@@ -76,7 +76,7 @@ class DataGenerator:
     
             # 1. Poids de base avec variation aléatoire
         base_weights = {
-        'New York': 17.584, 'Los Angeles': 13.02871, 'Chicago': 11.5648,  # Grandes métropoles
+        'New York': 22.584, 'Los Angeles': 15.02871, 'Chicago': 11.5648,  # Grandes métropoles
         'San Francisco': 8.1202, 'Houston': 7.698, 'Miami': 4.39814,      # Villes importantes
         'default': 1.254                                      # Autres villes
             }
@@ -86,8 +86,8 @@ class DataGenerator:
         for city in cities:
             if city in base_weights:
                 base_weight = base_weights[city]
-                # Variation aléatoire entre 70% et 130% du poids de base
-                variation = 0.7 + 0.6 * random.random()  # Entre 0.7 et 1.3
+                # Variation aléatoire entre 70% et 110% du poids de base
+                variation = 0.7 + 0.4 * random.random()  # Entre 0.7 et 1.1
                 weight = base_weight * variation
             else:
                 # Variation plus forte pour les petites villes
@@ -96,12 +96,12 @@ class DataGenerator:
         
             weights.append(weight)
     
-        # 3. 10% de chance de sélection totalement aléatoire
-        if random.random() < 0.1:
+        # 3. 15% de chance de sélection totalement aléatoire
+        if random.random() < 0.15:
             return random.choice(cities)
     
-        # 4. 5% de chance de retourner une ville d'une autre région
-        if random.random() < 0.05:
+        # 4. 6% de chance de retourner une ville d'une autre région
+        if random.random() < 0.06:
             other_regions = [r for r in self.regions if r != region]
             foreign_region = random.choice(other_regions)
             return random.choice(self.usa_cities[foreign_region])
