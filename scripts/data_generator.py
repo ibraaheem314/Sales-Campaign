@@ -81,7 +81,7 @@ class DataGenerator:
         'default': 1.254                                      # Autres villes
             }
     
-        # 2. Application des poids avec variation aléatoire (±30%)
+        # 2. Application des poids avec variation aléatoire (±20%)
         weights = []
         for city in cities:
             if city in base_weights:
@@ -236,9 +236,8 @@ class DataGenerator:
         
             # 1. Valeurs manquantes différentielles
             missing_config = {
-                'duration': 0.15, 'product': 0.1, 'region': 0.05,
-                'agent_id': 0.02, 'client_type': 0.07
-                    }
+                'duration': 0.18, 'product': 0.1, 'region': 0.08,
+                'agent_id': 0.02, 'client_type': 0.16,'previous_contacts':0.04}
         
             for col, rate in missing_config.items():
                 if col in df.columns:
@@ -247,15 +246,15 @@ class DataGenerator:
 
             # 2. Anomalies temporelles (plus robuste)
             if 'call_time' in df.columns:
-                time_mask = np.random.random(len(df)) < 0.01
+                time_mask = np.random.random(len(df)) < 0.019
                 df.loc[time_mask, 'call_time'] = np.random.choice(
                     ["00:00:00", "23:59:59", "12:00:00", "99:99:99"],
                     size=time_mask.sum()
                     )
 
-            # 3. Incohérences métier (version corrigée)
+            # 3. Incohérences métier
             if all(col in df.columns for col in ['product', 'region']):
-                mismatch_mask = np.random.random(len(df)) < 0.005
+                mismatch_mask = np.random.random(len(df)) < 0.0112
                 df.loc[mismatch_mask, 'product'] = np.where(
                     df.loc[mismatch_mask, 'region'] == 'North',
                     'Hardware',
@@ -264,12 +263,12 @@ class DataGenerator:
 
             # 4. Données extrêmes
             if 'duration' in df.columns:
-                extreme_mask = np.random.random(len(df)) < 0.02
+                extreme_mask = np.random.random(len(df)) < 0.032
                 df.loc[extreme_mask, 'duration'] = df.loc[extreme_mask, 'duration'] * 10
 
             # 5. Problèmes de formats (exemple corrigé)
             if 'agent_id' in df.columns:
-                format_mask = np.random.random(len(df)) < 0.01
+                format_mask = np.random.random(len(df)) < 0.0124
                 df.loc[format_mask, 'agent_id'] = 'AG-' + df.loc[format_mask, 'agent_id'].astype(str)
 
             return df
